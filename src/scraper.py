@@ -187,25 +187,43 @@ def main():
             logger.info("No events found on the page.")
             return
 
+        available_events = []
         for event in events:
             if event["event_id"] in notified:
                 logger.info("Already notified for %s - skipping.", event["name"])
                 continue
 
             if scraper.check_event_availability(event["url"]):
-                message = (
-                    f"Tickets are available for {event['name']}! "
-                    f"Check them out here: {event['url']}"
-                )
-                if notifier.send_notification(message):
-                    notified.add(event["event_id"])
-                    logger.info("Notification sent for %s.", event["name"])
-                else:
-                    logger.warning("Notification FAILED for %s.", event["name"])
+                available_events.append(event)
+                logger.info("Tickets available for %s.", event["name"])
             else:
                 logger.info("No tickets for %s.", event["name"])
     finally:
         scraper.close()
+
+    if available_events:
+        lines = []
+        for event in available_events:
+            desc = event["name"]
+            if event.get("date"):
+                desc += f" — {event['date']}"
+            if event.get("time"):
+                desc += f", {event['time']}"
+            if event.get("venue"):
+                desc += f" @ {event['venue']}"
+            lines.append(f'<a href="{event["url"]}">{desc}</a>')
+
+        html_body = (
+            "<p>Tickets are available for the following events:</p>"
+            "<ul>" + "".join(f"<li>{line}</li>" for line in lines) + "</ul>"
+            "<p>Get them before they're gone!</p>"
+        )
+        if notifier.send_notification(html_body):
+            for event in available_events:
+                notified.add(event["event_id"])
+            logger.info(
+                "Notification sent for %d event(s).", len(available_events)
+            )
 
     save_notified_events(notified)
     logger.info("Done.")
