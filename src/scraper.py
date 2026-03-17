@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 
 from selenium import webdriver
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 EMPTY_EVENT_TEXT = "This event is out of tickets for now"
 
+EVENT_UUID_RE = re.compile(r"/event/([^/]+)/tickets")
+
 
 class Scraper:
     def __init__(self, url: str):
@@ -48,12 +51,20 @@ class Scraper:
         self.driver = webdriver.Chrome(service=service, options=options)
         self.driver.get(self.url)
 
-        # Wait for the page body to be present
-        WebDriverWait(self.driver, 20).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-        # Extra pause for JS rendering
-        time.sleep(5)
+        # Wait for the Vue app to render storefront content
+        try:
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, ".marketplace-storefront-branding")
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Storefront branding not found; page may not have fully rendered."
+            )
+
+        # Extra pause for event list to populate
+        time.sleep(3)
         logger.info("Page loaded: %s", self.url)
         return True
 
@@ -63,74 +74,51 @@ class Scraper:
             self.driver = None
 
     # ------------------------------------------------------------------
-    # Ticket detection
+    # Event detection
     # ------------------------------------------------------------------
     def _dismiss_toasts(self):
-        """Remove any toast overlays that may block clicks."""
+        """Remove any toast overlays that may block interaction."""
         self.driver.execute_script(
             "document.querySelectorAll('.app-toaster__message, .app-toaster')"
             ".forEach(el => el.remove());"
         )
         time.sleep(0.5)
 
-    def _find_view_ticket_buttons(self):
-        """Return all <button> elements whose text contains 'View Tickets'."""
-        return self.driver.find_elements(
-            By.XPATH,
-            "//button[.//span[contains(text(),'View Tickets')]]",
-        )
-
-    def check_ticket_buttons(self) -> int:
-        """Return the count of 'View Tickets' buttons on the page."""
+    def get_events(self) -> list:
+        """Find all event rows and return dicts with url, name, and event_id."""
         self._dismiss_toasts()
-        buttons = self._find_view_ticket_buttons()
-        logger.info("Found %d 'View Tickets' button(s)", len(buttons))
-        return len(buttons)
-
-    def handle_ticket_availability(self, button_index: int) -> bool:
-        """Click the Nth 'View Tickets' button and check for availability.
-
-        Uses a JavaScript click to bypass any overlay elements (e.g. toasts).
-        After clicking, if the "Empty Event" popup appears, tickets are
-        unavailable.  The popup is dismissed before returning.
-        """
-        self._dismiss_toasts()
-        buttons = self._find_view_ticket_buttons()
-        if button_index >= len(buttons):
-            logger.warning("Button index %d out of range.", button_index)
-            return False
-
-        btn = buttons[button_index]
-        self.driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
-            btn,
+        rows = self.driver.find_elements(
+            By.CSS_SELECTOR, "a.marketplace-event-list-row"
         )
-        time.sleep(4)
+        events = []
+        for row in rows:
+            href = row.get_attribute("href") or ""
+            try:
+                name = row.find_element(By.CSS_SELECTOR, "h5").text.strip()
+            except Exception:
+                name = "Unknown Event"
+            match = EVENT_UUID_RE.search(href)
+            event_id = match.group(1) if match else href
+            events.append({"url": href, "name": name, "event_id": event_id})
+        logger.info("Found %d event(s) on the page.", len(events))
+        return events
 
-        page_text = self.driver.page_source
-        if EMPTY_EVENT_TEXT in page_text:
-            logger.info("Empty-event popup detected - no tickets available.")
-            self._dismiss_modal()
-            return False
-
-        logger.info("Tickets appear to be available!")
-        self._dismiss_modal()
-        return True
-
-    def _dismiss_modal(self):
-        """Try to close any open modal/popup."""
+    def check_event_availability(self, event_url: str) -> bool:
+        """Navigate to an event ticket page and check if tickets exist."""
+        self.driver.get(event_url)
         try:
-            close_btn = self.driver.find_element(
-                By.XPATH,
-                "//*[contains(@class,'close') or contains(@aria-label,'Close')]",
+            WebDriverWait(self.driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            self.driver.execute_script("arguments[0].click();", close_btn)
-            time.sleep(1)
         except Exception:
-            from selenium.webdriver.common.keys import Keys
+            pass
+        time.sleep(5)
 
-            webdriver.ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
-            time.sleep(1)
+        if EMPTY_EVENT_TEXT in self.driver.page_source:
+            logger.info("No tickets available at %s", event_url)
+            return False
+        logger.info("Tickets appear available at %s", event_url)
+        return True
 
 
 # ------------------------------------------------------------------
@@ -163,28 +151,27 @@ def main():
     scraper = Scraper(TARGET_URL)
     try:
         scraper.load_website()
-        button_count = scraper.check_ticket_buttons()
+        events = scraper.get_events()
 
-        if button_count == 0:
-            logger.info("No 'View Tickets' buttons found on the page.")
+        if not events:
+            logger.info("No events found on the page.")
             return
 
-        for idx in range(button_count):
-            event_id = f"event-{idx}"
-            if event_id in notified:
-                logger.info("Already notified for %s - skipping.", event_id)
+        for event in events:
+            if event["event_id"] in notified:
+                logger.info("Already notified for %s - skipping.", event["name"])
                 continue
 
-            if scraper.handle_ticket_availability(idx):
+            if scraper.check_event_availability(event["url"]):
                 message = (
-                    "Tickets are available on Smith's Mammoth Tickets! "
-                    "Check them out here: " + TARGET_URL
+                    f"Tickets are available for {event['name']}! "
+                    f"Check them out here: {event['url']}"
                 )
                 notifier.send_notification(message)
-                notified.add(event_id)
-                logger.info("Notification sent for %s.", event_id)
+                notified.add(event["event_id"])
+                logger.info("Notification sent for %s.", event["name"])
             else:
-                logger.info("No tickets for %s.", event_id)
+                logger.info("No tickets for %s.", event["name"])
     finally:
         scraper.close()
 
