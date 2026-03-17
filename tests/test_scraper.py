@@ -17,41 +17,56 @@ class TestScraper(unittest.TestCase):
 
     @patch("scraper.webdriver.Chrome")
     @patch("scraper.ChromeDriverManager")
-    def test_check_ticket_buttons_returns_list(self, mock_cdm, mock_chrome):
+    def test_check_ticket_buttons_returns_count(self, mock_cdm, mock_chrome):
         mock_driver = MagicMock()
         mock_chrome.return_value = mock_driver
         mock_driver.find_elements.return_value = []
 
         scraper = Scraper("http://example.com")
         scraper.driver = mock_driver
-        buttons = scraper.check_ticket_buttons()
-        self.assertIsInstance(buttons, list)
+        count = scraper.check_ticket_buttons()
+        self.assertIsInstance(count, int)
+        self.assertEqual(count, 0)
 
     @patch("scraper.webdriver.Chrome")
     def test_handle_ticket_availability_empty(self, mock_chrome):
         mock_driver = MagicMock()
         mock_driver.page_source = "Empty Event This event is out of tickets for now"
+        mock_btn = MagicMock()
+        mock_driver.find_elements.return_value = [mock_btn]
         mock_chrome.return_value = mock_driver
 
         scraper = Scraper("http://example.com")
         scraper.driver = mock_driver
 
-        btn = MagicMock()
-        result = scraper.handle_ticket_availability(btn)
+        result = scraper.handle_ticket_availability(0)
         self.assertFalse(result)
 
     @patch("scraper.webdriver.Chrome")
     def test_handle_ticket_availability_available(self, mock_chrome):
         mock_driver = MagicMock()
         mock_driver.page_source = "<html>Some ticket info</html>"
+        mock_btn = MagicMock()
+        mock_driver.find_elements.return_value = [mock_btn]
         mock_chrome.return_value = mock_driver
 
         scraper = Scraper("http://example.com")
         scraper.driver = mock_driver
 
-        btn = MagicMock()
-        result = scraper.handle_ticket_availability(btn)
+        result = scraper.handle_ticket_availability(0)
         self.assertTrue(result)
+
+    @patch("scraper.webdriver.Chrome")
+    def test_handle_ticket_availability_out_of_range(self, mock_chrome):
+        mock_driver = MagicMock()
+        mock_driver.find_elements.return_value = []
+        mock_chrome.return_value = mock_driver
+
+        scraper = Scraper("http://example.com")
+        scraper.driver = mock_driver
+
+        result = scraper.handle_ticket_availability(5)
+        self.assertFalse(result)
 
 
 class TestNotifiedEventsState(unittest.TestCase):

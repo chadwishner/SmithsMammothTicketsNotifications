@@ -65,47 +65,68 @@ class Scraper:
     # ------------------------------------------------------------------
     # Ticket detection
     # ------------------------------------------------------------------
-    def check_ticket_buttons(self) -> list:
-        """Return a list of clickable 'view ticket' elements."""
-        buttons = []
-        clickable = self.driver.find_elements(By.XPATH, "//button | //a")
-        for el in clickable:
-            text = el.text.strip().lower()
-            if "view ticket" in text:
-                buttons.append(el)
-        logger.info("Found %d 'view ticket' button(s)", len(buttons))
-        return buttons
+    def _dismiss_toasts(self):
+        """Remove any toast overlays that may block clicks."""
+        self.driver.execute_script(
+            "document.querySelectorAll('.app-toaster__message, .app-toaster')"
+            ".forEach(el => el.remove());"
+        )
+        time.sleep(0.5)
 
-    def handle_ticket_availability(self, button) -> bool:
-        """Click a ticket button and return True if tickets are actually available.
+    def _find_view_ticket_buttons(self):
+        """Return all <button> elements whose text contains 'View Tickets'."""
+        return self.driver.find_elements(
+            By.XPATH,
+            "//button[.//span[contains(text(),'View Tickets')]]",
+        )
 
-        After clicking, the site may show an "Empty Event" popup when no
-        tickets remain.  If that popup does NOT appear, tickets are available.
+    def check_ticket_buttons(self) -> int:
+        """Return the count of 'View Tickets' buttons on the page."""
+        self._dismiss_toasts()
+        buttons = self._find_view_ticket_buttons()
+        logger.info("Found %d 'View Tickets' button(s)", len(buttons))
+        return len(buttons)
+
+    def handle_ticket_availability(self, button_index: int) -> bool:
+        """Click the Nth 'View Tickets' button and check for availability.
+
+        Uses a JavaScript click to bypass any overlay elements (e.g. toasts).
+        After clicking, if the "Empty Event" popup appears, tickets are
+        unavailable.  The popup is dismissed before returning.
         """
-        button.click()
-        time.sleep(3)
+        self._dismiss_toasts()
+        buttons = self._find_view_ticket_buttons()
+        if button_index >= len(buttons):
+            logger.warning("Button index %d out of range.", button_index)
+            return False
+
+        btn = buttons[button_index]
+        self.driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
+            btn,
+        )
+        time.sleep(4)
 
         page_text = self.driver.page_source
         if EMPTY_EVENT_TEXT in page_text:
-            logger.info("Empty-event popup detected – no tickets available.")
-            # Dismiss any modal so we can continue
+            logger.info("Empty-event popup detected - no tickets available.")
             self._dismiss_modal()
             return False
 
         logger.info("Tickets appear to be available!")
+        self._dismiss_modal()
         return True
 
     def _dismiss_modal(self):
-        """Try to close a modal/popup if one is open."""
+        """Try to close any open modal/popup."""
         try:
             close_btn = self.driver.find_element(
                 By.XPATH,
                 "//*[contains(@class,'close') or contains(@aria-label,'Close')]",
             )
-            close_btn.click()
+            self.driver.execute_script("arguments[0].click();", close_btn)
             time.sleep(1)
         except Exception:
-            # No close button found – press Escape as fallback
             from selenium.webdriver.common.keys import Keys
 
             webdriver.ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
@@ -142,21 +163,21 @@ def main():
     scraper = Scraper(TARGET_URL)
     try:
         scraper.load_website()
-        buttons = scraper.check_ticket_buttons()
+        button_count = scraper.check_ticket_buttons()
 
-        if not buttons:
-            logger.info("No 'view ticket' buttons found on the page.")
+        if button_count == 0:
+            logger.info("No 'View Tickets' buttons found on the page.")
             return
 
-        for idx, btn in enumerate(buttons):
+        for idx in range(button_count):
             event_id = f"event-{idx}"
             if event_id in notified:
-                logger.info("Already notified for %s – skipping.", event_id)
+                logger.info("Already notified for %s - skipping.", event_id)
                 continue
 
-            if scraper.handle_ticket_availability(btn):
+            if scraper.handle_ticket_availability(idx):
                 message = (
-                    "🎟️ Tickets are available on Smith's Mammoth Tickets! "
+                    "Tickets are available on Smith's Mammoth Tickets! "
                     "Check them out here: " + TARGET_URL
                 )
                 notifier.send_notification(message)
