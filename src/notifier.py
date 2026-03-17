@@ -20,8 +20,8 @@ class Notifier:
         self.smtp_port = smtp_port
         self.recipients = recipients
 
-    def send_notification(self, message: str, subject: str = "Mammoth Tickets Available!") -> bool:
-        """Send *message* via email to every recipient. Returns True if at least one sent."""
+    def send_notification(self, html_body: str, subject: str = "Mammoth Tickets Available!") -> bool:
+        """Send an HTML email to every recipient. Returns True if at least one sent."""
         if not self.recipients:
             logger.warning("No recipient emails configured – skipping notification.")
             return False
@@ -40,7 +40,7 @@ class Notifier:
                         msg["Subject"] = subject
                         msg["From"] = self.smtp_username
                         msg["To"] = recipient
-                        msg.set_content(message)
+                        msg.set_content(html_body, subtype="html")
                         server.send_message(msg)
                         logger.info("Email sent to %s", recipient)
                         sent = True

@@ -86,7 +86,7 @@ class Scraper:
         time.sleep(0.5)
 
     def get_events(self) -> list:
-        """Find all event rows and return dicts with url, name, and event_id."""
+        """Find all event rows and return dicts with url, name, date, time, venue, and event_id."""
         self._dismiss_toasts()
         rows = self.driver.find_elements(
             By.CSS_SELECTOR, "a.marketplace-event-list-row"
@@ -98,9 +98,31 @@ class Scraper:
                 name = row.find_element(By.CSS_SELECTOR, "h5").text.strip()
             except Exception:
                 name = "Unknown Event"
+            try:
+                date_col = row.find_element(
+                    By.CSS_SELECTOR, ".marketplace-event-list-row-column--date"
+                )
+                date_text = date_col.find_element(By.CSS_SELECTOR, ".font-bold").text.strip()
+                time_text = date_col.find_element(By.CSS_SELECTOR, ".text-14").text.strip()
+            except Exception:
+                date_text = ""
+                time_text = ""
+            try:
+                venue = row.find_element(
+                    By.CSS_SELECTOR, ".flex-1 .text-14"
+                ).text.strip()
+            except Exception:
+                venue = ""
             match = EVENT_UUID_RE.search(href)
             event_id = match.group(1) if match else href
-            events.append({"url": href, "name": name, "event_id": event_id})
+            events.append({
+                "url": href,
+                "name": name,
+                "date": date_text,
+                "time": time_text,
+                "venue": venue,
+                "event_id": event_id,
+            })
         logger.info("Found %d event(s) on the page.", len(events))
         return events
 

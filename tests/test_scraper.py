@@ -40,7 +40,29 @@ class TestScraper(unittest.TestCase):
         )
         mock_h5 = MagicMock()
         mock_h5.text = "Edmonton Oilers at Utah Mammoth"
-        mock_row.find_element.return_value = mock_h5
+
+        mock_date_col = MagicMock()
+        mock_date_bold = MagicMock()
+        mock_date_bold.text = "Mar 24, 2026"
+        mock_date_time = MagicMock()
+        mock_date_time.text = "Tue • 7:30 PM"
+        mock_date_col.find_element.side_effect = lambda by, val: (
+            mock_date_bold if "font-bold" in val else mock_date_time
+        )
+
+        mock_venue = MagicMock()
+        mock_venue.text = "Delta Center • Salt Lake City, UT"
+
+        def find_element_side_effect(by, val):
+            if val == "h5":
+                return mock_h5
+            elif "date" in val:
+                return mock_date_col
+            elif "flex-1" in val:
+                return mock_venue
+            return MagicMock()
+
+        mock_row.find_element.side_effect = find_element_side_effect
         mock_driver.find_elements.return_value = [mock_row]
 
         scraper = Scraper("http://example.com")
@@ -48,6 +70,8 @@ class TestScraper(unittest.TestCase):
         events = scraper.get_events()
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["name"], "Edmonton Oilers at Utah Mammoth")
+        self.assertEqual(events[0]["date"], "Mar 24, 2026")
+        self.assertEqual(events[0]["venue"], "Delta Center • Salt Lake City, UT")
         self.assertEqual(events[0]["event_id"], "12345")
         self.assertIn("/event/12345/tickets", events[0]["url"])
 
