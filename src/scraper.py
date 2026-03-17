@@ -14,11 +14,12 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from config import (
     NOTIFIED_STATE_FILE,
-    SUBSCRIBER_PHONE_NUMBERS,
+    NOTIFY_EMAILS,
+    SMTP_HOST,
+    SMTP_PASSWORD,
+    SMTP_PORT,
+    SMTP_USERNAME,
     TARGET_URL,
-    TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
-    TWILIO_FROM_NUMBER,
 )
 from notifier import Notifier
 
@@ -141,12 +142,19 @@ def save_notified_events(events: set):
 # ------------------------------------------------------------------
 def main():
     notifier = Notifier(
-        account_sid=TWILIO_ACCOUNT_SID,
-        auth_token=TWILIO_AUTH_TOKEN,
-        from_number=TWILIO_FROM_NUMBER,
-        subscribers=SUBSCRIBER_PHONE_NUMBERS,
+        smtp_username=SMTP_USERNAME,
+        smtp_password=SMTP_PASSWORD,
+        recipients=NOTIFY_EMAILS,
+        smtp_host=SMTP_HOST,
+        smtp_port=SMTP_PORT,
     )
     notified = load_notified_events()
+
+    logger.info(
+        "Config: smtp_user=%s, recipients=%s",
+        SMTP_USERNAME or "(not set)",
+        NOTIFY_EMAILS or "(none)",
+    )
 
     scraper = Scraper(TARGET_URL)
     try:
@@ -167,9 +175,11 @@ def main():
                     f"Tickets are available for {event['name']}! "
                     f"Check them out here: {event['url']}"
                 )
-                notifier.send_notification(message)
-                notified.add(event["event_id"])
-                logger.info("Notification sent for %s.", event["name"])
+                if notifier.send_notification(message):
+                    notified.add(event["event_id"])
+                    logger.info("Notification sent for %s.", event["name"])
+                else:
+                    logger.warning("Notification FAILED for %s.", event["name"])
             else:
                 logger.info("No tickets for %s.", event["name"])
     finally:

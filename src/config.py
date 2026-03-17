@@ -3,12 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
-SUBSCRIBER_PHONE_NUMBERS = (
-    [n.strip() for n in os.getenv("SUBSCRIBER_NUMBERS", "").split(",") if n.strip()]
-)
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+NOTIFY_EMAILS = [
+    e.strip() for e in os.getenv("NOTIFY_EMAILS", "").split(",") if e.strip()
+]
 
 TARGET_URL = (
     "https://pa.exchange/marketplace/84f01098-97cb-11f0-8949-59ab7ccaae49"
