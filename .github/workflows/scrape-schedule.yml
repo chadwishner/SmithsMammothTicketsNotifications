@@ -1,0 +1,46 @@
+name: Daily Ticket Scraper
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # Runs every day at noon UTC
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore notification state cache
+        uses: actions/cache@v4
+        with:
+          path: notified_events.json
+          key: notified-events-${{ github.ref }}
+          restore-keys: |
+            notified-events-
+
+      - name: Run the scraper
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          SUBSCRIBER_NUMBERS: ${{ secrets.SUBSCRIBER_NUMBERS }}
+        working-directory: src
+        run: python scraper.py

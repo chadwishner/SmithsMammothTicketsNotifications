@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+notified_events.json
+.pytest_cache/
