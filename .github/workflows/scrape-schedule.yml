@@ -29,11 +29,12 @@ jobs:
           pip install -r requirements.txt
 
       - name: Restore notification state cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: notified_events.json
-          key: notified-events-${{ github.ref }}
+          key: notified-events-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
+            notified-events-${{ github.ref }}-
             notified-events-
 
       - name: Run the scraper
@@ -43,3 +44,10 @@ jobs:
           NOTIFY_EMAILS: ${{ secrets.NOTIFY_EMAILS }}
         working-directory: src
         run: python scraper.py
+
+      - name: Save notification state cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: notified_events.json
+          key: notified-events-${{ github.ref }}-${{ github.run_id }}
