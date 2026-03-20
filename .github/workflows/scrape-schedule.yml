@@ -8,6 +8,8 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout repository
@@ -36,6 +38,9 @@ jobs:
           restore-keys: |
             notified-events-${{ github.ref }}-
             notified-events-
+
+      - name: Show cached notification state
+        run: cat notified_events.json || echo "No cache file found"
 
       - name: Run the scraper
         env:
